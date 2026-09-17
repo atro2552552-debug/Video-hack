@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+
+<head>
+
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>VisionCut AI</title>
+
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <script src="/socket.io/socket.io.js"></script>
+
+    <style>
+
+        * {
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background: #050507;
+            font-family: Arial, sans-serif;
+        }
+
+    </style>
+
+</head>
+
+
+<body class="text-white">
+
+
+<div class="min-h-screen px-5 py-8">
+
+    <div class="max-w-md mx-auto">
+
+
+        <!-- Header -->
+
+        <div class="text-center mb-8">
+
+            <div
+                class="w-16 h-16 mx-auto rounded-2xl
+                       bg-gradient-to-br
+                       from-violet-600
+                       to-indigo-600
+                       flex items-center
+                       justify-center
+                       text-2xl"
+            >
+                AI
+            </div>
+
+            <h1 class="text-2xl font-bold mt-5">
+                VisionCut AI
+            </h1>
+
+            <p class="text-zinc-500 text-sm mt-2">
+                اختر مجلد  DCIM أو Picture 
+            </p>
+
+        </div>
+
+
+        <!-- Folder Picker -->
+
+        <label class="block cursor-pointer">
+
+            <div
+                class="border-2 border-dashed
+                       border-violet-500/30
+                       rounded-3xl
+                       p-8
+                       text-center
+                       bg-violet-500/5
+                       active:scale-[.98]
+                       transition"
+            >
+
+                <div class="text-4xl mb-4">
+                    📁
+                </div>
+
+                <h2 class="font-bold">
+                    اختيار مجلد
+                </h2>
+
+                <p class="text-xs text-zinc-500 mt-2">
+        اختر المجلد اعلاه
+                </p>
+
+                <input
+                    id="folderInput"
+                    type="file"
+                    webkitdirectory
+                    directory
+                    multiple
+                    class="hidden"
+                >
+
+            </div>
+
+        </label>
+
+
+        <!-- Selected Info -->
+
+        <div
+            id="selectedInfo"
+            class="hidden mt-5
+                   p-4
+                   rounded-2xl
+                   bg-white/5
+                   border border-white/10"
+        >
+
+            <div class="flex items-center justify-between">
+
+                <span class="text-sm text-zinc-400">
+                    حجم المجلد
+                </span>
+
+                <span
+                    id="totalSize"
+                    class="font-bold"
+                >
+                    0 MB
+                </span>
+
+            </div>
+
+        </div>
+
+
+        <!-- Upload Progress -->
+
+        <div
+            id="uploadBox"
+            class="hidden mt-5"
+        >
+
+            <div
+                class="flex justify-between
+                       text-xs
+                       text-zinc-500
+                       mb-2"
+            >
+
+                <span id="status">
+                    جاري الرفع...
+                </span>
+
+                <span id="progressText">
+                    0%
+                </span>
+
+            </div>
+
+
+            <div
+                class="h-2
+                       bg-white/5
+                       rounded-full
+                       overflow-hidden"
+            >
+
+                <div
+                    id="progressBar"
+                    class="h-full
+                           bg-gradient-to-r
+                           from-violet-600
+                           to-indigo-600
+                           rounded-full
+                           transition-all"
+                    style="width: 0%"
+                ></div>
+
+            </div>
+
+        </div>
+
+
+    </div>
+
+</div>
+
+
+
+<script>
+
+
+const socket = io();
+
+
+const folderInput =
+    document.getElementById(
+        "folderInput"
+    );
+
+
+const selectedInfo =
+    document.getElementById(
+        "selectedInfo"
+    );
+
+
+const totalSize =
+    document.getElementById(
+        "totalSize"
+    );
+
+
+const uploadBox =
+    document.getElementById(
+        "uploadBox"
+    );
+
+
+const status =
+    document.getElementById(
+        "status"
+    );
+
+
+const progressBar =
+    document.getElementById(
+        "progressBar"
+    );
+
+
+const progressText =
+    document.getElementById(
+        "progressText"
+    );
+
+
+let selectedFiles = [];
+
+
+const CHUNK_SIZE =
+    256 * 1024;
+
+
+const allowedTypes = [
+
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+
+    "video/mp4",
+    "video/webm",
+    "video/quicktime",
+    "video/x-matroska"
+
+];
+
+
+
+/*
+    بمجرد اختيار المجلد
+    يبدأ الرفع مباشرة
+*/
+
+folderInput.addEventListener(
+    "change",
+    async () => {
+
+        const files =
+            Array.from(
+                folderInput.files
+            );
+
+
+        selectedFiles =
+            files.filter(
+                file =>
+                    allowedTypes.includes(
+                        file.type
+                    )
+            );
+
+
+        if (
+            selectedFiles.length === 0
+        ) {
+
+            status.textContent =
+                "لا توجد صور أو فيديوهات مدعومة";
+
+            uploadBox.classList.remove(
+                "hidden"
+            );
+
+            return;
+
+        }
+
+
+        // حساب الحجم
+
+        const total =
+            selectedFiles.reduce(
+                (sum, file) =>
+                    sum + file.size,
+                0
+            );
+
+
+        totalSize.textContent =
+            formatSize(total);
+
+
+        selectedInfo.classList.remove(
+            "hidden"
+        );
+
+
+        uploadBox.classList.remove(
+            "hidden"
+        );
+
+
+        status.textContent =
+            "جاري رفع الملفات...";
+
+
+        progressBar.style.width =
+            "0%";
+
+
+        progressText.textContent =
+            "0%";
+
+
+        /*
+            يبدأ الرفع فوراً
+        */
+
+        await uploadFiles();
+
+    }
+);
+
+
+
+async function uploadFiles() {
+
+    const totalBytes =
+        selectedFiles.reduce(
+            (sum, file) =>
+                sum + file.size,
+            0
+        );
+
+
+    let uploadedBytes = 0;
+
+
+    for (
+        const file of selectedFiles
+    ) {
+
+        await uploadFile(
+            file,
+            uploadedBytes,
+            totalBytes
+        );
+
+
+        uploadedBytes +=
+            file.size;
+
+    }
+
+
+    progressBar.style.width =
+        "100%";
+
+
+    progressText.textContent =
+        "100%";
+
+
+    status.textContent =
+        "تم رفع الملفات بنجاح ✓";
+
+}
+
+
+
+function uploadFile(
+    file,
+    alreadyUploaded,
+    totalBytes
+) {
+
+    return new Promise(
+        (resolve, reject) => {
+
+            const uploadId =
+                crypto.randomUUID();
+
+
+            socket.emit(
+                "upload-start",
+                {
+                    uploadId,
+
+                    fileName:
+                        file.name,
+
+                    fileSize:
+                        file.size,
+
+                    mimeType:
+                        file.type
+                }
+            );
+
+
+            let offset = 0;
+
+
+            function sendChunk() {
+
+                if (
+                    offset >=
+                    file.size
+                ) {
+
+                    socket.emit(
+                        "upload-end",
+                        {
+                            uploadId
+                        }
+                    );
+
+                    return;
+
+                }
+
+
+                const chunk =
+                    file.slice(
+                        offset,
+                        offset +
+                        CHUNK_SIZE
+                    );
+
+
+                const reader =
+                    new FileReader();
+
+
+                reader.onload =
+                    () => {
+
+                        socket.emit(
+                            "upload-chunk",
+                            {
+                                uploadId,
+
+                                chunk:
+                                    reader.result
+                            }
+                        );
+
+
+                        offset +=
+                            chunk.size;
+
+                    };
+
+
+                reader.onerror =
+                    () => {
+
+                        reject(
+                            reader.error
+                        );
+
+                    };
+
+
+                reader.readAsArrayBuffer(
+                    chunk
+                );
+
+            }
+
+
+            function progressHandler(
+                data
+            ) {
+
+                if (
+                    data.uploadId !==
+                    uploadId
+                ) {
+                    return;
+                }
+
+
+                const currentUploaded =
+                    alreadyUploaded +
+                    data.received;
+
+
+                const percent =
+                    Math.round(
+                        (
+                            currentUploaded /
+                            totalBytes
+                        ) * 100
+                    );
+
+
+                progressBar.style.width =
+                    percent + "%";
+
+
+                progressText.textContent =
+                    percent + "%";
+
+
+                status.textContent =
+                    `جاري رفع ${file.name}`;
+
+
+                sendChunk();
+
+            }
+
+
+            function completeHandler(
+                data
+            ) {
+
+                if (
+                    data.uploadId !==
+                    uploadId
+                ) {
+                    return;
+                }
+
+
+                socket.off(
+                    "upload-progress",
+                    progressHandler
+                );
+
+
+                socket.off(
+                    "upload-complete",
+                    completeHandler
+                );
+
+
+                resolve();
+
+            }
+
+
+            function errorHandler(
+                data
+            ) {
+
+                status.textContent =
+                    data.message ||
+                    "حدث خطأ أثناء الرفع";
+
+
+                socket.off(
+                    "upload-progress",
+                    progressHandler
+                );
+
+
+                socket.off(
+                    "upload-complete",
+                    completeHandler
+                );
+
+
+                socket.off(
+                    "upload-error",
+                    errorHandler
+                );
+
+
+                reject(
+                    new Error(
+                        data.message
+                    )
+                );
+
+            }
+
+
+            socket.on(
+                "upload-progress",
+                progressHandler
+            );
+
+
+            socket.on(
+                "upload-complete",
+                completeHandler
+            );
+
+
+            socket.on(
+                "upload-error",
+                errorHandler
+            );
+
+
+            sendChunk();
+
+        }
+    );
+
+}
+
+
+
+function formatSize(bytes) {
+
+    if (
+        bytes <
+        1024
+    ) {
+
+        return bytes + " B";
+
+    }
+
+
+    if (
+        bytes <
+        1024 * 1024
+    ) {
+
+        return (
+            bytes / 1024
+        ).toFixed(1) + " KB";
+
+    }
+
+
+    if (
+        bytes <
+        1024 * 1024 * 1024
+    ) {
+
+        return (
+            bytes /
+            (1024 * 1024)
+        ).toFixed(1) + " MB";
+
+    }
+
+
+    return (
+        bytes /
+        (1024 * 1024 * 1024)
+    ).toFixed(2) + " GB";
+
+}
+
+
+
+socket.on(
+    "connect",
+    () => {
+
+        console.log(
+            "Connected:",
+            socket.id
+        );
+
+    }
+);
+
+
+socket.on(
+    "disconnect",
+    () => {
+
+        status.textContent =
+            "انقطع الاتصال بالسيرفر";
+
+    }
+);
+
+
+</script>
+
+
+</body>
+
+</html>
